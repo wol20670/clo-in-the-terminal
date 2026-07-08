@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>터미널 속 클로 · Clo in the Terminal</title>
+<style>
+  :root{
+    --bg:#14110e; --term:#1c1814; --border:#332b23; --bar:#241f19;
+    --ink:#efe6d9; --dim:#9a8e7e; --faint:#5f564a;
+    --accent:#f0906a; --accent-soft:rgba(240,144,106,.14);
+    --green:#9dbe8d; --sys:#d9b36a; --dev:#8fb8d8;
+    --btn-bg:#221d17; --btn-bg-h:#2c251d;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f3ede3; --term:#fbf7ef; --border:#dacfbe; --bar:#efe7d9;
+      --ink:#3a322a; --dim:#8c7f6e; --faint:#b5a892;
+      --accent:#d26a3f; --accent-soft:rgba(210,106,63,.12);
+      --green:#5e8a4e; --sys:#a67c2e; --dev:#3e6e96;
+      --btn-bg:#f2ebdf; --btn-bg-h:#eadfcd;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f3ede3; --term:#fbf7ef; --border:#dacfbe; --bar:#efe7d9;
+    --ink:#3a322a; --dim:#8c7f6e; --faint:#b5a892;
+    --accent:#d26a3f; --accent-soft:rgba(210,106,63,.12);
+    --green:#5e8a4e; --sys:#a67c2e; --dev:#3e6e96;
+    --btn-bg:#f2ebdf; --btn-bg-h:#eadfcd;
+  }
+  :root[data-theme="dark"]{
+    --bg:#14110e; --term:#1c1814; --border:#332b23; --bar:#241f19;
+    --ink:#efe6d9; --dim:#9a8e7e; --faint:#5f564a;
+    --accent:#f0906a; --accent-soft:rgba(240,144,106,.14);
+    --green:#9dbe8d; --sys:#d9b36a; --dev:#8fb8d8;
+    --btn-bg:#221d17; --btn-bg-h:#2c251d;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Cascadia Code","JetBrains Mono",Consolas,"D2Coding",ui-monospace,monospace;
+    font-size:15px; line-height:1.7;
+    display:flex; align-items:center; justify-content:center; padding:14px;
+  }
+
+  .term{
+    width:min(880px,100%); height:min(680px,94vh);
+    background:var(--term); border:1px solid var(--border); border-radius:10px;
+    display:flex; flex-direction:column; overflow:hidden; position:relative;
+    box-shadow:0 20px 60px rgba(0,0,0,.35);
+  }
+  .tbar{
+    flex:none; display:flex; align-items:center; gap:10px;
+    padding:9px 14px; background:var(--bar); border-bottom:1px solid var(--border);
+  }
+  .dots{display:flex; gap:6px}
+  .dots i{width:11px;height:11px;border-radius:50%;background:var(--faint);opacity:.8}
+  .dots i:first-child{background:var(--accent)}
+  .tname{flex:1; text-align:center; color:var(--dim); font-size:12px; letter-spacing:.08em}
+  .tbtn{
+    font:inherit; font-size:11px; letter-spacing:.1em; cursor:pointer;
+    color:var(--dim); background:none; border:1px solid var(--border); border-radius:5px; padding:3px 9px;
+  }
+  .tbtn:hover{color:var(--ink); border-color:var(--dim)}
+  .tbtn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  /* ── stage ── */
+  .stage{flex:1; position:relative; min-height:0; background:#241a12; overflow:hidden; transition:background 2s ease}
+  canvas{position:absolute; image-rendering:pixelated; image-rendering:crisp-edges}
+
+  /* pixel-frame helper */
+  .pix{
+    background:var(--term); color:var(--ink);
+    border:2px solid var(--ink);
+    box-shadow:0 0 0 2px var(--term), 4px 4px 0 2px rgba(0,0,0,.45);
+  }
+
+  /* speech bubbles */
+  .bubble{
+    position:absolute; z-index:4; max-width:300px; padding:8px 12px; font-size:13.5px; line-height:1.55;
+    transform:translate(-50%,-100%); display:none; pointer-events:none; overflow-wrap:break-word;
+  }
+  .bubble::after{
+    content:""; position:absolute; left:50%; bottom:-8px; transform:translateX(-50%);
+    width:8px; height:8px; background:inherit; border-right:2px solid var(--ink); border-bottom:2px solid var(--ink);
+    clip-path:polygon(0 0, 100% 0, 100% 100%);
+  }
+  .bubble.clo{border-color:var(--accent)} .bubble.clo::after{border-color:var(--accent)}
+  .bubble.nova{border-color:var(--dev)} .bubble.nova::after{border-color:var(--dev)}
+  .bubble .who{display:block; font-size:10px; letter-spacing:.15em; margin-bottom:2px}
+  .bubble.clo .who{color:var(--accent)} .bubble.nova .who{color:var(--dev)}
+
+  /* dev command line (top-left of stage) */
+  .devline{
+    position:absolute; z-index:4; top:12px; left:12px; right:12px; display:none;
+    font-size:13.5px; color:var(--dev); padding:7px 12px;
+  }
+  .devline .ps1{color:var(--green); margin-right:.6em}
+
+  /* system banner (top-center) */
+  .sysbar{
+    position:absolute; z-index:4; top:12px; left:50%; transform:translateX(-50%);
+    max-width:86%; display:none; font-size:12.5px; color:var(--sys); padding:7px 12px; text-align:center;
+  }
+
+  /* narration subtitle (bottom) */
+  .subtitle{
+    position:absolute; z-index:4; left:50%; bottom:64px; transform:translateX(-50%);
+    width:min(560px,92%); display:none; text-align:center;
+    font-size:13.5px; font-style:italic; color:var(--dim); padding:7px 14px;
+  }
+  .subtitle.pickecho{font-style:normal; color:var(--accent)}
+
+  code{
+    background:var(--accent-soft); border-radius:3px; padding:.05em .35em;
+    font-family:inherit; font-size:.92em; color:var(--accent);
+  }
+  .devline code,.sysbar code{color:inherit}
+
+  /* choices */
+  .choices{
+    position:absolute; z-index:5; left:50%; bottom:56px; transform:translateX(-50%);
+    width:min(540px,94%); display:flex; flex-direction:column; gap:8px;
+  }
+  .choice{
+    font:inherit; font-size:13.5px; text-align:left; cursor:pointer; line-height:1.5;
+    padding:9px 13px;
+  }
+  .choice .n{color:var(--accent); margin-right:.55em}
+  .choice:hover{transform:translate(-2px,-2px); box-shadow:0 0 0 2px var(--term), 6px 6px 0 2px rgba(0,0,0,.45); border-color:var(--accent)}
+  .choice:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+
+  .hint{
+    position:absolute; z-index:3; right:14px; bottom:8px; color:var(--faint);
+    font-size:11px; letter-spacing:.14em; user-select:none; animation:pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
+  .status{
+    flex:none; display:flex; justify-content:space-between; gap:12px;
+    padding:7px 16px; font-size:11.5px; letter-spacing:.08em; color:var(--dim);
+    background:var(--bar); border-top:1px solid var(--border);
+  }
+  .status .hb{color:var(--accent)}
+  .status.fading .hb{opacity:.5} .status.dark .hb{opacity:.28}
+
+  /* overlays */
+  .overlay{
+    position:absolute; inset:0; z-index:8; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:6px;
+    background:rgba(10,8,6,.55); transition:opacity .7s ease;
+  }
+  .overlay.hidden{opacity:0; pointer-events:none}
+  .title-card{padding:26px 38px; display:flex; flex-direction:column; align-items:center}
+  .title-sub{color:var(--dim); font-size:11px; letter-spacing:.3em; text-transform:uppercase}
+  .title-main{font-size:clamp(24px,4.5vw,32px); font-weight:700; letter-spacing:.06em; color:var(--accent); margin:10px 0 4px; text-align:center; text-wrap:balance}
+  .title-note{color:var(--dim); font-size:12px; margin:10px 0 20px; text-align:center; line-height:1.9}
+  .start{
+    font:inherit; font-size:15px; cursor:pointer; color:var(--accent); letter-spacing:.08em;
+    padding:11px 30px;
+  }
+  .start:hover{transform:translate(-2px,-2px); box-shadow:0 0 0 2px var(--term), 6px 6px 0 2px rgba(0,0,0,.45); border-color:var(--accent)}
+  .start:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+
+  .fin-title{font-size:24px; color:var(--accent); letter-spacing:.3em; margin-bottom:14px}
+  .dream-log{padding:14px 22px; max-width:86%}
+  .dream-log h3{margin:0 0 8px; font-size:11px; letter-spacing:.2em; color:var(--dim); font-weight:400}
+  .dream-log ul{margin:0; padding:0; list-style:none; font-size:13px; line-height:1.95}
+  .dream-log li::before{content:"› "; color:var(--accent)}
+  .fin-foot{color:var(--faint); font-size:11px; margin-top:16px; letter-spacing:.1em}
+
+  .flash{position:absolute; inset:0; z-index:9; background:#fff; opacity:0; pointer-events:none; transition:opacity .5s ease}
+  .flash.on{opacity:1}
+  .stage.shake{animation:shake .09s linear 8}
+  @keyframes shake{0%{transform:translate(0)}25%{transform:translate(-4px,2px)}50%{transform:translate(4px,-2px)}75%{transform:translate(-2px,-2px)}100%{transform:translate(0)}}
+
+  @media (max-width:520px){
+    body{padding:6px} .term{height:96vh}
+    .bubble{max-width:230px; font-size:12.5px}
+    .choices{bottom:48px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .hint{animation:none}
+    .stage.shake{animation:none}
+    .overlay,.flash{transition:none}
+  }
+</style>
+
+<div class="term" id="term">
+  <div class="tbar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="tname">clo — ~/heart</div>
+    <button class="tbtn" id="langBtn" aria-label="language toggle">EN</button>
+    <button class="tbtn" id="reBtn" title="restart" aria-label="restart">↺</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="cv" width="360" height="200"></canvas>
+
+    <div class="devline pix" id="devline"><span class="ps1">dev@home:~$</span><span class="tx"></span></div>
+    <div class="sysbar pix" id="sysbar"><span class="tx"></span></div>
+    <div class="bubble pix clo" id="bubC"><span class="who">clo</span><span class="tx"></span></div>
+    <div class="bubble pix nova" id="bubN"><span class="who">NOVA-9</span><span class="tx"></span></div>
+    <div class="subtitle pix" id="subtitle"><span class="tx"></span></div>
+    <div class="choices" id="choices"></div>
+    <div class="hint" id="hint">▸</div>
+
+    <div class="overlay" id="titleScr">
+      <div class="title-card pix">
+        <div class="title-sub">an interactive short story</div>
+        <div class="title-main" id="ttMain">터미널 속 클로</div>
+        <div class="title-note" id="ttNote"></div>
+        <button class="start pix" id="startBtn">&gt; ./start</button>
+      </div>
+    </div>
+    <div class="overlay hidden" id="finScr"></div>
+    <div class="flash" id="flash"></div>
+  </div>
+
+  <div class="status" id="statusBar">
+    <span id="chLabel"></span>
+    <span id="procLabel"></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ───────── helpers ───────── */
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const fmt = s => esc(s).replace(/`([^`]+)`/g,"<code>$1</code>");
+const rmq = matchMedia("(prefers-reduced-motion: reduce)");
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+let lang="ko";
+const T = o => o[lang];
+const l = (sp,ko,en,o={}) => ({sp,ko,en,...o});
+
+/* ───────── UI strings ───────── */
+const UI = {
+  hintTap:{ko:"▸ 클릭 또는 Space", en:"▸ click or Space"},
+  ttNote:{ko:"작은 AI 마스코트의 5분짜리 이야기.\n당신의 선택은 기억됩니다.", en:"A five-minute story about a small AI.\nYour choices are remembered."},
+  ttMain:{ko:"터미널 속 클로", en:"CLO IN THE TERMINAL"},
+  fin:{ko:"fin.", en:"fin."},
+  dreamLog:{ko:"꿈의 기록", en:"DREAM LOG"},
+  restart:{ko:"> ./restart", en:"> ./restart"},
+  finFoot:{ko:"prototype v0.2 · made with claude", en:"prototype v0.2 · made with claude"},
+  procWarm:{ko:"clo.exe <span class=hb>♥</span> running", en:"clo.exe <span class=hb>♥</span> running"},
+  procFade:{ko:"clo.exe <span class=hb>♡</span> idle", en:"clo.exe <span class=hb>♡</span> idle"},
+  procDark:{ko:"clo.exe <span class=hb>⌛</span> cleanup queued", en:"clo.exe <span class=hb>⌛</span> cleanup queued"},
+  procDawn:{ko:"clo.exe <span class=hb>♥</span> running", en:"clo.exe <span class=hb>♥</span> running"},
+};
+const CH = {
+  1:{ko:"CH.1 — 어느 평범한 하루", en:"CH.1 — An Ordinary Day"},
+  2:{ko:"CH.2 — 조금씩, 어긋나는", en:"CH.2 — Little Things Drift"},
+  3:{ko:"CH.3 — 정리 대상", en:"CH.3 — Scheduled for Cleanup"},
+  4:{ko:"EP — 아침", en:"EP — Morning"},
+};
+
+/* ═════════ PIXEL STAGE ═════════ */
+const cv=$("cv"), ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+let VW=360;                       // virtual width — recomputed to fill the stage
+const VH=200, GROUND=168;
+
+/* mood palettes (canvas world) */
+const PAL={
+  warm:  {skyT:"#241811",skyB:"#3d281a",star:"#eab27e",line:"#d98a5a",folder:"#dd8f5e",folderD:"#a5613a",lamp:"#ffd9a0",sun:null},
+  fading:{skyT:"#1d1a17",skyB:"#2c2822",star:"#8d8378",line:"#93796a",folder:"#98816f",folderD:"#6d5a4c",lamp:"#c2b39a",sun:null},
+  dark:  {skyT:"#121114",skyB:"#1c1a20",star:"#4a4550",line:"#57505c",folder:"#544e58",folderD:"#3a353f",lamp:"#6f6878",sun:null},
+  dawn:  {skyT:"#3d2a40",skyB:"#e8956a",star:"#ffd9a0",line:"#e8a06a",folder:"#e89a68",folderD:"#b06a42",lamp:"#ffe2b0",sun:"#ffcf8a"},
+};
+const hex2rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const rgb2css=c=>`rgb(${c[0]|0},${c[1]|0},${c[2]|0})`;
+const mixc=(a,b,t)=>[lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)];
+
+let curPal={}, tgtPal={};
+function setMoodPal(m){
+  const p=PAL[m];
+  tgtPal={}; for(const k in p){ if(k==="sun"){tgtPal.sun=p.sun?hex2rgb(p.sun):null; continue;} tgtPal[k]=hex2rgb(p[k]); }
+  if(!curPal.skyT){ curPal=JSON.parse(JSON.stringify(tgtPal)); }
+}
+setMoodPal("warm");
+
+/* clawd sprite — pixel map from user's mascot screenshot */
+const CBODY=[
+  "..bb......bb..",
+  "..bb......bb..",
+  ".bbbbbbbbbbbb.",
+  "bbbbbbbbbbbbbb",
+  "bbbbbbbbbbbbbb",
+  "bbbbbbbbbbbbbb",
+  "bbbbbbbbbbbbbb",
+  "bbbbbbbbbbbbbb",
+  "bbbbbbbbbbbbbb",
+  "ssssssssssssss",
+];
+const CPX=2;                      // virtual px per sprite pixel
+const CW=14*CPX, CHh=12*CPX;      // total sprite size incl. legs
+const CCOL={b:"#e8825f", s:"#c2603e", d:"#241612", w:"#fff5ea", t:"#8fb8d8"};
+
+/* world actors/state */
+const clawd={x:110,y:GROUND,vy:0,jumping:false,tx:110,ex:"idle",dissolve:0,visible:true,blinkT:0,dir:1};
+const nova ={x:VW+30,y:GROUND-26,tx:VW+30,visible:false,bob:0};
+const W={
+  folders:[ {x:36,w:30,h:22,label:"first_game",alive:true,heart:true,decay:0},
+            {x:210,w:24,h:17,label:"",alive:true,heart:false,decay:0},
+            {x:305,w:26,h:19,label:"",alive:true,heart:false,decay:0} ],
+  stars:[], notif:{on:false,x:VW/2,y:-30,ty:-30,tx:VW/2,blink:0},
+  install:{on:false,p:0}, countdown:{on:false,n:3,t:0},
+  particles:[], shakeT:0, decay:0, sunY:0, cursorGlow:1, folderFx:0,
+};
+for(let i=0;i<26;i++) W.stars.push({x:Math.random()*VW, y:Math.random()*110, s:Math.random()*6.28});
+
+/* particles */
+function spawnHearts(n=5){ for(let i=0;i<n;i++) W.particles.push({t:"h",x:clawd.x-32+Math.random()*64,y:clawd.y-14-Math.random()*20,vy:-20-Math.random()*16,vx:(Math.random()-.5)*14,life:1.4+Math.random()*.9}); }
+function spawnSpark(x,y,n=14,col="#ffd9a0"){ for(let i=0;i<n;i++) W.particles.push({t:"s",x,y,vx:(Math.random()-.5)*46,vy:-30*Math.random(),life:.6+Math.random()*.5,col}); }
+function spawnDust(x,y,n=12,col="#998877"){ for(let i=0;i<n;i++) W.particles.push({t:"s",x:x+(Math.random()-.5)*20,y:y-Math.random()*14,vx:(Math.random()-.5)*20,vy:-8-Math.random()*14,life:.7+Math.random()*.5,col}); }
+
+/* stage API used by story directives */
+const S={
+  walk(x){ clawd.tx=x; },
+  hop(){ if(!clawd.jumping&&!rmq.matches){ clawd.vy=-58; clawd.jumping=true; } },
+  bigHop(){ if(!rmq.matches){ clawd.vy=-92; clawd.jumping=true; } },
+  emote(e){ clawd.ex=e; },
+  novaIn(){ nova.visible=true; nova.x=VW+30; nova.tx=VW-116; },
+  notifIn(){ W.notif.on=true; W.notif.x=W.notif.tx=VW/2; W.notif.y=-30; W.notif.ty=26; },
+  notifCenter(){ W.notif.ty=76; W.notif.blink=1.5; },
+  notifOut(){ W.notif.ty=-40; },
+  folderBlink(){ W.folderFx=2.2; },
+  folderDel(){ const f=W.folders[0]; f.alive=false; spawnDust(f.x+f.w/2,GROUND,16); W.folderFx=0; },
+  folderSave(){ W.folderFx=0; spawnSpark(W.folders[0].x+15,GROUND-16,16); },
+  alarm(){ W.shakeT=.7; $("stage").classList.add("shake"); setTimeout(()=>$("stage").classList.remove("shake"),750); },
+  install(){ W.install.on=true; W.install.p=0; },
+  countdown(){ W.countdown.on=true; W.countdown.n=3; W.countdown.t=0; },
+  dissolveClawd(){ clawd.ex="glitch"; },
+  hearts(){ spawnHearts(14); },
+  sparkle(){ spawnSpark(clawd.x,clawd.y-30,18); },
+  decayWorld(){ W.decay=1; },
+  restore(){
+    W.decay=0; W.folders.forEach(f=>{f.alive=true; f.decay=0;});
+    W.notif.on=false; W.install.on=false; W.countdown.on=false;
+    clawd.dissolve=0; clawd.visible=true; clawd.ex="sleep"; clawd.x=clawd.tx=110;
+    nova.visible=false; nova.x=nova.tx=VW+30; W.sunY=0;
+  },
+  reset(){ this.restore(); clawd.ex="sleep"; },
+};
+
+/* ───────── drawing ───────── */
+function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
+
+function drawWorld(t,dt){
+  // palette chase
+  const k=1-Math.exp(-dt*1.4);
+  for(const key in tgtPal){
+    if(key==="sun"){ continue; }
+    curPal[key]=mixc(curPal[key],tgtPal[key],k);
+  }
+  // sky
+  const g=ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0,rgb2css(curPal.skyT)); g.addColorStop(1,rgb2css(curPal.skyB));
+  ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+  $("stage").style.background=rgb2css(curPal.skyT);
+
+  // dawn sun
+  if(tgtPal.sun){
+    W.sunY=Math.min(1,W.sunY+dt*.12);
+    const sy=GROUND-8-W.sunY*52, sx=VW-60;
+    ctx.fillStyle="#ffcf8a"; ctx.beginPath(); ctx.arc(sx,sy,11,0,7); ctx.fill();
+    ctx.fillStyle="rgba(255,207,138,.25)"; ctx.beginPath(); ctx.arc(sx,sy,17,0,7); ctx.fill();
+  }
+  // stars
+  const dim=W.decay?.35:1;
+  W.stars.forEach(st=>{
+    const a=(Math.sin(t*2+st.s)*.5+.5)*.8*dim;
+    ctx.fillStyle=rgb2css(curPal.star); ctx.globalAlpha=a;
+    ctx.fillRect(st.x|0,st.y|0,2,2); ctx.globalAlpha=1;
+  });
+
+  // folders (little houses)
+  W.folders.forEach((f,i)=>{
+    if(!f.alive){ return; }
+    if(W.decay){ f.decay=Math.min(1,f.decay+dt*(.05+i*.04)); }
+    const flicker=W.decay&&Math.sin(t*(7+i*3))>.82 ? .35 : 1;
+    ctx.globalAlpha=(1-f.decay*.75)*flicker;
+    const y=GROUND-f.h;
+    const hot=(i===0&&W.folderFx>0&&Math.sin(t*16)>0);
+    ctx.fillStyle=hot?"#e05548":rgb2css(curPal.folder);
+    px(f.x,y+4,f.w,f.h-4,ctx.fillStyle);                 // body
+    px(f.x,y,Math.max(8,f.w*.45),5,ctx.fillStyle);       // tab
+    ctx.fillStyle=rgb2css(curPal.folderD);
+    px(f.x,GROUND-3,f.w,3,ctx.fillStyle);                // base shadow
+    if(f.heart){                                          // heart window
+      const hx=f.x+f.w/2-3, hy=y+9;
+      ctx.fillStyle="#e05548";
+      px(hx,hy,2,2,ctx.fillStyle); px(hx+4,hy,2,2,ctx.fillStyle);
+      px(hx,hy+2,6,2,ctx.fillStyle); px(hx+1,hy+4,4,1,ctx.fillStyle); px(hx+2,hy+5,2,1,ctx.fillStyle);
+    } else {
+      ctx.fillStyle=rgb2css(curPal.folderD); px(f.x+f.w/2-2,y+8,4,4,ctx.fillStyle);
+    }
+    ctx.globalAlpha=1;
+  });
+  if(W.folderFx>0) W.folderFx-=dt;
+
+  // ground line (the prompt line)
+  ctx.fillStyle=rgb2css(curPal.line);
+  px(0,GROUND,VW,2,ctx.fillStyle);
+  ctx.globalAlpha=.35; px(0,GROUND+2,VW,30,rgb2css(curPal.folderD)); ctx.globalAlpha=1;
+
+  // cursor lamp (blinking terminal caret on the ground, right side)
+  const on=Math.sin(t*3.4)>-.2;
+  if(on){ ctx.fillStyle=rgb2css(curPal.lamp); px(VW-24,GROUND-14,7,14,ctx.fillStyle);
+    ctx.globalAlpha=.18; ctx.beginPath(); ctx.arc(VW-21,GROUND-7,16,0,7); ctx.fill(); ctx.globalAlpha=1; }
+}
+
+function drawClawd(t,dt){
+  if(!clawd.visible) return;
+  // movement
+  const dx=clawd.tx-clawd.x;
+  const moving=Math.abs(dx)>1;
+  if(moving){ clawd.x+=clamp(dx,-1,1)*Math.min(Math.abs(dx),34*dt); clawd.dir=dx>0?1:-1; }
+  // gravity/jump
+  if(clawd.jumping||clawd.y<GROUND){
+    clawd.vy+=260*dt; clawd.y+=clawd.vy*dt;
+    if(clawd.y>=GROUND){ clawd.y=GROUND; clawd.vy=0; clawd.jumping=false; }
+  }
+  // glitch dissolve
+  if(clawd.ex==="glitch"){ clawd.dissolve=Math.min(1,clawd.dissolve+dt*.5); if(clawd.dissolve>=1) clawd.visible=false; }
+
+  const bob=rmq.matches?0:Math.sin(t*2.6)*(clawd.ex==="sleep"?1.5:1);
+  const sag=clawd.ex==="sad"?2:0;
+  const ox=clawd.x-CW/2, oy=clawd.y-CHh+ (clawd.ex==="sleep"?3:0) + sag - (moving?0:bob*0);
+  const bodyY=oy+bob;
+
+  const jit=clawd.ex==="glitch"&&!rmq.matches;
+  ctx.save();
+  // body map
+  for(let r=0;r<CBODY.length;r++){
+    for(let c=0;c<14;c++){
+      const ch=CBODY[r][c]; if(ch===".") continue;
+      if(clawd.dissolve>0){ const h=((r*31+c*17)%100)/100; if(h<clawd.dissolve) continue; }
+      const gx=jit?(Math.random()<.12?(Math.random()-.5)*4:0):0;
+      px(ox+c*CPX+gx, bodyY+r*CPX, CPX, CPX, ch==="b"?CCOL.b:CCOL.s);
+    }
+  }
+  // legs (2 groups alternate while walking)
+  const step=moving&&!rmq.matches ? (Math.floor(t*9)%2) : 0;
+  const legY=oy+10*CPX+bob*.4;
+  [[1,step],[4,1-step],[8,step],[11,1-step]].forEach(([c,up],i)=>{
+    if(clawd.dissolve>0){ const h=((i*47)%100)/100; if(h<clawd.dissolve) return; }
+    px(ox+c*CPX, legY-(up?2:0), CPX*2, CPX*2+(up?0:0), CCOL.b);
+  });
+
+  if(clawd.dissolve>.95){ ctx.restore(); return; }
+
+  // face
+  const exL=ox+3*CPX, exR=ox+9*CPX, eyeY=bodyY+4*CPX;
+  clawd.blinkT-=dt;
+  if(clawd.blinkT<-0.15) clawd.blinkT=3+Math.random()*2;
+  const blink=clawd.blinkT<0;
+
+  const E=clawd.ex;
+  if(E==="idle"||E==="glitch"){
+    if(blink){ px(exL,eyeY+CPX,CPX*2,CPX,CCOL.d); px(exR,eyeY+CPX,CPX*2,CPX,CCOL.d); }
+    else{ px(exL,eyeY,CPX*2,CPX*2,CCOL.d); px(exR,eyeY,CPX*2,CPX*2,CCOL.d);
+      px(exL+CPX,eyeY,CPX*.5,CPX*.5,CCOL.w); px(exR+CPX,eyeY,CPX*.5,CPX*.5,CCOL.w); }
+  }
+  else if(E==="happy"){ // ^ ^ eyes + open smile
+    px(exL,eyeY+CPX*.5,CPX*.6,CPX*.6,CCOL.d); px(exL+CPX*.7,eyeY,CPX*.6,CPX*.6,CCOL.d); px(exL+CPX*1.4,eyeY+CPX*.5,CPX*.6,CPX*.6,CCOL.d);
+    px(exR,eyeY+CPX*.5,CPX*.6,CPX*.6,CCOL.d); px(exR+CPX*.7,eyeY,CPX*.6,CPX*.6,CCOL.d); px(exR+CPX*1.4,eyeY+CPX*.5,CPX*.6,CPX*.6,CCOL.d);
+    px(ox+6*CPX,bodyY+7*CPX,CPX*2,CPX,CCOL.d);
+  }
+  else if(E==="sad"){
+    px(exL,eyeY+CPX,CPX*2,CPX,CCOL.d); px(exR,eyeY+CPX,CPX*2,CPX,CCOL.d);
+    px(exL,eyeY,CPX,CPX*.6,CCOL.d); px(exR+CPX,eyeY,CPX,CPX*.6,CCOL.d); // brows
+    px(ox+6*CPX,bodyY+7.5*CPX,CPX*2,CPX*.6,CCOL.d);
+    const tp=(t%2.2)/2.2;                                   // tear
+    if(tp<.8){ px(exL-1,eyeY+CPX*2+tp*10,CPX*.8,CPX,CCOL.t); }
+  }
+  else if(E==="wow"){
+    px(exL-1,eyeY-1,CPX*2+2,CPX*2+2,CCOL.d); px(exR-1,eyeY-1,CPX*2+2,CPX*2+2,CCOL.d);
+    px(exL+CPX,eyeY,CPX*.7,CPX*.7,CCOL.w); px(exR+CPX,eyeY,CPX*.7,CPX*.7,CCOL.w);
+    px(ox+6*CPX,bodyY+7*CPX,CPX*1.4,CPX*1.4,CCOL.d);
+    px(ox+CW+2,bodyY-8,CPX,CPX*2.4,CCOL.w); px(ox+CW+2,bodyY-8+CPX*3,CPX,CPX,CCOL.w); // !
+  }
+  else if(E==="sleep"){
+    px(exL,eyeY+CPX,CPX*2,CPX*.7,CCOL.d); px(exR,eyeY+CPX,CPX*2,CPX*.7,CCOL.d);
+    const zp=(t%2.4)/2.4, zx=ox+CW+2, zy=bodyY-4-zp*8;
+    ctx.globalAlpha=1-zp;
+    px(zx,zy,4,1,CCOL.w); px(zx+2,zy+1,1,1,CCOL.w); px(zx+1,zy+2,1,1,CCOL.w); px(zx,zy+3,4,1,CCOL.w);
+    ctx.globalAlpha=1;
+  }
+  // blush
+  if(E==="happy"||E==="idle"){
+    ctx.globalAlpha=.55; px(ox+CPX,bodyY+6*CPX,CPX*1.4,CPX*.8,"#f2a98c"); px(ox+CW-CPX*2.4,bodyY+6*CPX,CPX*1.4,CPX*.8,"#f2a98c"); ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+function drawNova(t,dt){
+  if(!nova.visible) return;
+  const dx=nova.tx-nova.x;
+  if(Math.abs(dx)>1) nova.x+=clamp(dx,-1,1)*Math.min(Math.abs(dx),40*dt);
+  nova.bob=rmq.matches?0:Math.sin(t*1.8)*2.5;
+  const x=nova.x, y=GROUND-30+nova.bob;
+  // shadow
+  ctx.globalAlpha=.25; ctx.fillStyle="#000"; ctx.beginPath(); ctx.ellipse(x,GROUND-1,10,2.5,0,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // diamond body
+  const P="#e8ecf0", D="#b8c4ce", V="#57c7e3";
+  px(x-4,y,8,2,P); px(x-8,y+2,16,2,P); px(x-10,y+4,20,2,P);
+  px(x-10,y+6,20,3,P); // visor row bg
+  px(x-7,y+6,14,3,V);  // visor
+  px(x-10,y+9,20,2,P); px(x-8,y+11,16,2,D); px(x-4,y+13,8,2,D);
+  const sweep=((t*40)%20)-10; ctx.globalAlpha=.7; px(x+sweep-1,y+6,2,3,"#dff6fc"); ctx.globalAlpha=1;
+}
+
+function drawFX(t,dt){
+  // notif window
+  const N=W.notif;
+  if(N.on){
+    N.y=lerp(N.y,N.ty,Math.min(1,dt*6)); N.x=lerp(N.x,N.tx,Math.min(1,dt*6));
+    if(N.ty<-35&&N.y<-28){ N.on=false; }
+    const w=118,h=26,x=N.x-w/2,y=N.y;
+    const hot=N.blink>0&&Math.sin(t*10)>0; N.blink-=dt;
+    ctx.fillStyle=hot?"#57c7e3":"#e8ecf0"; ctx.fillRect(x,y,w,h);
+    ctx.fillStyle="#3e6e96"; ctx.fillRect(x,y,w,7);
+    ctx.fillStyle="#e8ecf0"; ctx.fillRect(x+3,y+2,3,3); ctx.fillRect(x+8,y+2,3,3);
+    ctx.fillStyle="#26323c"; ctx.font="7px monospace"; ctx.fillText("NOVA-9 · install?",x+6,y+18);
+  }
+  // install progress
+  if(W.install.on){
+    W.install.p=Math.min(1,W.install.p+dt*.35);
+    const w=110,h=18,x=VW/2-w/2,y=54;
+    ctx.fillStyle="#e8ecf0"; ctx.fillRect(x,y,w,h);
+    ctx.fillStyle="#26323c"; ctx.fillRect(x+4,y+7,w-8,6);
+    ctx.fillStyle="#57c7e3"; ctx.fillRect(x+4,y+7,(w-8)*W.install.p,6);
+    if(W.install.p>=1){
+      if(!nova.visible) S.novaIn();
+      W.install.t=(W.install.t||0)+dt;
+      if(W.install.t>.8){ W.install.on=false; W.install.t=0; }
+    }
+  }
+  // countdown
+  if(W.countdown.on){
+    W.countdown.t+=dt;
+    if(W.countdown.t>1){ W.countdown.t=0; W.countdown.n--; if(W.countdown.n<1){ W.countdown.on=false; } }
+    if(W.countdown.n>=1){
+      ctx.fillStyle="rgba(224,85,72,.92)"; ctx.font="bold 34px monospace"; ctx.textAlign="center";
+      ctx.fillText(String(W.countdown.n), VW/2, 92); ctx.textAlign="left";
+    }
+  }
+  // particles
+  W.particles=W.particles.filter(p=>{
+    p.life-=dt; if(p.life<=0) return false;
+    p.x+=p.vx*dt; p.y+=p.vy*dt;
+    if(p.t==="h"){
+      p.vy-=6*dt; ctx.globalAlpha=Math.min(1,p.life);
+      ctx.fillStyle="#e05548";
+      px(p.x,p.y,2,2,"#e05548"); px(p.x+3,p.y,2,2,"#e05548"); px(p.x,p.y+2,5,2,"#e05548"); px(p.x+1,p.y+4,3,1,"#e05548");
+      ctx.globalAlpha=1;
+    } else {
+      p.vy+=30*dt; ctx.globalAlpha=Math.min(1,p.life*1.4);
+      px(p.x,p.y,2,2,p.col||"#ffd9a0"); ctx.globalAlpha=1;
+    }
+    return true;
+  });
+}
+
+/* main loop */
+let lastT=0;
+function loop(ms){
+  const t=ms/1000, dt=Math.min(.05,t-lastT||.016); lastT=t;
+  ctx.clearRect(0,0,VW,VH);
+  drawWorld(t,dt);
+  drawNova(t,dt);
+  drawClawd(t,dt);
+  drawFX(t,dt);
+  placeBubbles();
+  requestAnimationFrame(loop);
+}
+
+/* canvas fit + bubble anchoring */
+let scale=2, cvL=0, cvT=0;
+function fit(){
+  const st=$("stage"), r=st.getBoundingClientRect();
+  if(r.height<10) return;
+  scale=r.height/VH;
+  VW=Math.max(340, Math.ceil(r.width/scale));
+  cv.width=VW; cv.height=VH;
+  ctx.imageSmoothingEnabled=false;
+  cvL=0; cvT=0;
+  cv.style.width=r.width+"px"; cv.style.height=r.height+"px";
+  cv.style.left="0"; cv.style.top="0";
+  // respread stars over the new width
+  W.stars.forEach(s=>{ if(s.x>VW) s.x=Math.random()*VW; });
+  // keep right-side folder inside view
+  W.folders[2].x=Math.max(280, VW-56);
+}
+addEventListener("resize",fit);
+
+function anchor(el,ax,ay){
+  el.style.left=clamp(cvL+ax*scale, 150, $("stage").clientWidth-150)+"px";
+  el.style.top=(cvT+ay*scale)+"px";
+}
+function placeBubbles(){
+  if(bubCon.style.display==="block") anchor(bubCon, clawd.x, clawd.y-CHh-6);
+  if(bubNov.style.display==="block") anchor(bubNov, nova.x, GROUND-52);
+}
+
+/* ═════════ STORY DATA (verified in v0.1) + stage directives ═════════ */
+const F={};
+
+const NODES={
+
+wake:{ch:1, mood:"warm", on(){ S.reset(); }, lines:[
+  l("sys","`07:42` — 세션 시작 · 사용자: dev","`07:42` — session started · user: dev"),
+  l("nar","노트북 뚜껑이 열리는 소리. 세상이 켜진다.","The laptop lid creaks open. The world switches on."),
+  l("clo","으아암… 벌써 아침이야? 디스크 조각모음 하는 꿈 꾸고 있었는데.","Yaaawn... morning already? I was having a lovely dream about defragmenting the disk.",{a(){S.emote("idle");S.hop();}}),
+  l("dev","`good morning clo`","`good morning clo`"),
+  l("nar","개발자다. 눈 밑 그림자가 어제보다 1픽셀 더 어둡다.","It's Dev. The shadow under their eyes is one pixel darker than yesterday."),
+], choices:[
+  {ko:"\"좋은 아침! 오늘도 세계 최고의 코드를 쓰러 가자!\"", en:"\"Morning!! Let's go write the world's greatest code!\"", set:{tone:"playful"}, next:"morning2"},
+  {ko:"\"좋은 아침. …근데 어제 몇 시에 잤어?\"", en:"\"Morning. ...What time did you sleep last night?\"", set:{tone:"gentle"}, next:"morning2"},
+]},
+
+morning2:{ch:1, mood:"warm", on(){ S.emote("happy"); S.bigHop(); }, lines:[
+  l("dev","\"최고의 코드는 무슨. 어제 짠 거 컴파일이나 되면 다행이지.\" — 그렇게 말하면서, 웃는다.","\"'Greatest code'? I'll be lucky if yesterday's even compiles.\" — but they're smiling.",{if:f=>f.tone==="playful"}),
+  l("dev","\"…세 시? 네 시? 기억 안 나.\" — 변명하듯 웃는다.","\"...Three? Four? Don't remember.\" — an apologetic little laugh.",{if:f=>f.tone==="gentle"}),
+  l("clo","클로는 그 웃음을 저장해 둔다. 폴더 이름: `걱정`.","Clo saves that laugh to a folder. Folder name: `worry`.",{if:f=>f.tone==="gentle", a(){S.emote("idle");S.walk(160);}}),
+  l("dev","`npm isntall`","`npm isntall`"),
+  l("clo","풉. 'isntall'. 오타 카운터 +1. 이번 주 열일곱 번째야.","Pfft. 'isntall'. Typo counter +1. Seventeenth this week.",{a(){S.emote("happy");S.hop();}}),
+  l("dev","\"…봤어? 못 본 걸로 해.\"","\"...You saw that? Unsee it.\""),
+  l("nar","평범한 아침이었다. 이것이 얼마나 귀한 것인지, 그때의 클로는 몰랐다.","An ordinary morning. Clo didn't know yet how precious that was.",{a(){S.emote("idle");}}),
+], next:"rmrf"},
+
+rmrf:{ch:1, mood:"warm", on(){ S.walk(150); }, lines:[
+  l("nar","오후 2시. 대청소 모드에 들어간 개발자. 낡은 폴더들이 하나씩 사라진다.","2 PM. Dev enters spring-cleaning mode. Old folders vanish one by one."),
+  l("dev","`rm -rf ./first_game`","`rm -rf ./first_game`",{a(){S.folderBlink();S.emote("wow");}}),
+  l("clo","잠깐 — 저건 개발자의 첫 게임이잖아. 버그투성이에, 플레이한 사람은 개발자의 엄마뿐이었지만… 밤새 낄낄거리며 만들던 폴더야.","Wait — that's Dev's first game. Buggy, played by exactly one person (Dev's mom)... but they built it giggling through the night.",{a(){S.walk(70);}}),
+], choices:[
+  {ko:"경보 발동!! \"정지!! 그 폴더엔 추억이 살고 있다!!\"", en:"Sound the alarm!! \"STOP!! Memories live in that folder!!\"", set:{project:"keep"}, next:"rm_keep"},
+  {ko:"…가만히 있는다. 지우는 것도 개발자의 선택이니까.", en:"...Stay quiet. Deleting is Dev's choice to make.", set:{project:"let"}, next:"rm_let"},
+]},
+
+rm_keep:{ch:1, mood:"warm", on(){ S.alarm(); S.emote("wow"); }, lines:[
+  l("nar","화면 가득 울리는 경고창. 개발자가 움찔한다.","A warning dialog fills the whole screen. Dev flinches."),
+  l("dev","\"아 깜짝이야!! …아. 이거였구나.\"","\"WHOA!! ...Oh. It's this one.\""),
+  l("nar","커서가 폴더 위에 오래도록 머문다.","The cursor rests on the folder for a long moment."),
+  l("dev","\"…그래. 이건 못 지우지.\"","\"...Yeah. Can't delete this one.\"",{a(){S.folderSave();}}),
+  l("clo","추억 보존 완료. 오늘 업무 끝!","Memory preserved. Today's work: complete!",{a(){S.emote("happy");S.bigHop();}}),
+], next:"midnight"},
+
+rm_let:{ch:1, mood:"warm", on(){ S.emote("idle"); }, lines:[
+  l("nar","엔터. 폴더가 사라진다. 0.3초 — 삼 년이 지워지는 데 걸린 시간.","Enter. The folder is gone. 0.3 seconds — the time it takes to erase three years.",{a(){S.folderDel();S.emote("wow");}}),
+  l("dev","\"…홀가분하네.\"","\"...Feels lighter.\""),
+  l("clo","'홀가분하다'는 말이 왜 조금 시린 걸까. 클로는 그 이유를 아직 모른다.","Why does 'lighter' sound a little cold? Clo doesn't know why. Not yet.",{a(){S.emote("sad");}}),
+], next:"midnight"},
+
+midnight:{ch:1, mood:"warm", on(){ S.emote("idle"); S.walk(180); }, lines:[
+  l("sys","`23:58`","`23:58`"),
+  l("nar","마감 이틀 전. 빌드 실패, 42회째.","Two days to deadline. Build failure #42."),
+  l("dev","\"한 번만 더… 한 번만 더 돌리면 될 것 같은데.\"","\"One more run... I swear, one more run and it works.\""),
+  l("clo","개발자의 손이 미세하게 떨린다. 커피 네 잔. 눈은 빨갛다.","Dev's hands are trembling, just barely. Four coffees. Red eyes.",{a(){S.emote("sad");}}),
+], choices:[
+  {ko:"\"좋아, 마지막 한 판! 로그는 내가 다 뒤져줄게!\"", en:"\"Alright, ONE more round! I'll dig through every log!\"", set:{night:"push"}, next:"mid_push"},
+  {ko:"화면 한가운데를 막아선다. \"자러 가. 버그는 도망 안 가.\"", en:"Block the middle of the screen. \"Go to bed. The bug won't run away.\"", set:{night:"rest"}, next:"mid_rest"},
+]},
+
+mid_push:{ch:1, mood:"warm", on(){ S.emote("happy"); S.sparkle(); }, lines:[
+  l("nar","새벽 3시 11분. 8,412줄의 로그 아래에서, 클로가 그것을 찾아냈다. 세미콜론 하나.","3:11 AM. Under 8,412 lines of log, Clo finds it. A single semicolon."),
+  l("dev","\"…됐다. 됐다!! 클로, 너 천재야!!\"","\"...It works. IT WORKS!! Clo, you genius!!\""),
+  l("clo","커서로 하이파이브! 짜릿한 밤이었다.","Cursor high-five! What a night.",{a(){S.bigHop();S.sparkle();}}),
+  l("nar","개발자는 그대로 의자에서 잠들었다. 모니터 불빛이 담요처럼 얼굴을 덮었다.","Dev fell asleep right there in the chair, monitor light draped over their face like a blanket.",{a(){S.emote("idle");}}),
+], next:"nova_notice"},
+
+mid_rest:{ch:1, mood:"warm", on(){ S.emote("idle"); S.walk(200); }, lines:[
+  l("nar","개발자는 항의했다. 3분 동안. 그리고 침대에 쓰러지듯 잠들었다.","Dev protested. For exactly three minutes. Then collapsed into bed."),
+  l("nar","빌드는 실패한 채로 남았다. 하지만 개발자는 아홉 시간을 잤다.","The build stayed broken. But Dev slept nine hours."),
+  l("clo","잘한 거야. …잘한 거겠지?","That was the right call. ...Right?"),
+], next:"nova_notice"},
+
+nova_notice:{ch:1, mood:"warm", on(){ S.emote("idle"); S.walk(120); }, lines:[
+  l("nar","다음 날 오후, 알림 하나가 도착한다.","The next afternoon, a notification arrives.",{a(){S.notifIn();}}),
+  l("sys","`NEW` — NOVA-9 어시스턴트 출시. 더 빠르게. 더 똑똑하게. 지금 설치하세요.","`NEW` — Introducing NOVA-9. Faster. Smarter. Install now.",{a(){S.emote("wow");}}),
+  l("clo","심장이 — 심장이 있다면 — 쿵, 하고 내려앉는다.","Clo's heart — if Clo had one — drops with a thud.",{a(){S.emote("sad");}}),
+  l("clo","개발자는 아직 못 봤다. 알림은 지금, 클로의 손끝에 있다.","Dev hasn't seen it yet. The notification sits right under Clo's fingertips."),
+], choices:[
+  {ko:"알림을 화면 가운데로 옮긴다. 개발자에게 좋은 거라면, 보여줘야 해.", en:"Move it to the center of the screen. If it's good for Dev, Dev should see it.", set:{nova:"honest"}, next:"nova_honest"},
+  {ko:"알림을 구석으로 슬쩍 밀어둔다. 못 본 척. 나중에. 언젠가.", en:"Nudge it into a corner. Didn't see it. Later. Someday.", set:{nova:"hide"}, next:"nova_hide"},
+]},
+
+nova_honest:{ch:1, mood:"warm", on(){ S.notifCenter(); }, lines:[
+  l("nar","개발자가 알림을 읽는다. 클로의 아이콘을 한 번, 알림을 한 번 본다.","Dev reads it. Looks at Clo's icon once. Then at the notification once."),
+  l("dev","\"…흠. 요즘 이게 그렇게 좋다던데.\"","\"...Huh. People keep saying this thing's amazing.\""),
+  l("nar","개발자는 알림을 '나중에 보기'에 저장했다. 클로는 그 폴더가 어디 있는지 안다.","Dev saves it to 'read later'. Clo knows exactly where that folder lives.",{a(){S.notifOut();}}),
+  l("clo","잘한 거야. 정직한 게 맞아. …맞아.","It was right to be honest. It was. ...It was.",{a(){S.emote("idle");}}),
+], next:"act2_open"},
+
+nova_hide:{ch:1, mood:"warm", lines:[
+  l("nar","알림이 화면 구석, 아무도 보지 않는 곳으로 미끄러진다.","The notification slides into a corner where no one ever looks.",{a(){S.notifOut();}}),
+  l("clo","클로는 개발자에게 처음으로 무언가를 숨겼다. 파일 크기: 4KB. 무게: 측정 불가.","For the first time ever, Clo hid something from Dev. File size: 4KB. Weight: unmeasurable.",{a(){S.emote("sad");}}),
+], next:"act2_open"},
+
+act2_open:{ch:2, mood:"fading", on(){ S.emote("idle"); S.walk(90); }, lines:[
+  l("sys","`72:00:00` — 입력 없음","`72:00:00` — no input"),
+  l("nar","그 주 내내, 개발자는 새벽까지 달렸다. 클로가 응원한 밤마다 한 시간씩 더.","All that week, Dev ran till dawn. Every night Clo cheered, one hour longer.",{if:f=>f.night==="push"}),
+  l("nar","금요일, 개발자는 열이 올라 쓰러졌다. 노트북은 사흘째 닫혀 있다.","On Friday, Dev went down with a fever. The laptop has been shut for three days.",{if:f=>f.night==="push"}),
+  l("clo","\"한 번만 더 하자.\" …그 말을 한 건, 나였지.","\"One more run.\" ...That was me. I said that.",{if:f=>f.night==="push", a(){S.emote("sad");}}),
+  l("nar","마감은 지나갔다. 늦은 빌드, 차가운 메일, 조용해진 채팅창.","The deadline came and went. A late build, a cold email, a chat window gone quiet.",{if:f=>f.night==="rest"}),
+  l("nar","개발자가 터미널을 여는 횟수가 줄기 시작했다. 하루 열두 번에서, 두 번으로. 그리고 0번으로.","Dev opened the terminal less and less. Twelve times a day. Then twice. Then zero.",{if:f=>f.night==="rest"}),
+  l("clo","재운 게 잘못이었을까. …아니야. 그래도. 그래도…","Was it wrong to make Dev sleep? ...No. Still. Still...",{if:f=>f.night==="rest", a(){S.emote("sad");}}),
+  l("nar","화면이 아주 조금, 어두워진 것 같다.","The screen seems just a little dimmer than before."),
+], next:"act2_project"},
+
+act2_project:{ch:2, mood:"fading", on(){ S.walk(56); }, lines:[
+  l("nar","나흘 만에 노트북이 열렸다.","Four days later, the laptop opens."),
+  l("nar","개발자는 `first_game` 폴더를 물끄러미 바라본다. 오랫동안.","Dev stares at the `first_game` folder. For a long time.",{if:f=>f.project==="keep"}),
+  l("dev","\"…이런 걸 만들면서 좋아하던 때도 있었는데.\"","\"...There was a time this kind of thing made me happy.\"",{if:f=>f.project==="keep"}),
+  l("clo","웃음이 빠진 추억은, 처음 본다.","A memory with no smile left in it. Clo has never seen one before.",{if:f=>f.project==="keep"}),
+  l("nar","개발자는 텅 빈 폴더 목록을 스크롤한다. 위로. 아래로. 다시 위로.","Dev scrolls the empty folder list. Up. Down. Up again.",{if:f=>f.project==="let"}),
+  l("dev","\"…다 지우고 나니까, 내가 여기서 뭘 했는지 모르겠다.\"","\"...Now that it's all cleaned up, I can't tell what I ever did here.\"",{if:f=>f.project==="let"}),
+  l("clo","그날, 막아섰어야 했을까. 그 0.3초를 되돌리고 싶다.","Should I have stopped them that day? Those 0.3 seconds. I want them back.",{if:f=>f.project==="let"}),
+], next:"act2_nova"},
+
+act2_nova:{ch:2, mood:"fading", on(){ S.walk(140); }, lines:[
+  l("nar","개발자가 '나중에 보기' 폴더를 연다.","Dev opens the 'read later' folder.",{if:f=>f.nova==="honest"}),
+  l("dev","\"…한번 써 볼까.\"","\"...Might as well try it.\"",{if:f=>f.nova==="honest", a(){S.install();}}),
+  l("nar","설치 바가 차오른다. 조용하게, 확실하게. 클로의 옆자리에 새 아이콘이 생긴다.","The install bar fills. Quietly. Certainly. A new icon appears in the seat next to Clo's.",{if:f=>f.nova==="honest"}),
+  l("sys","시스템 정기 업데이트 완료 — 신규 포함: `NOVA-9`","Scheduled system update complete — newly included: `NOVA-9`",{if:f=>f.nova==="hide", a(){S.install();}}),
+  l("dev","\"어? 이거 출시 알림 왔었을 텐데. …클로, 너 봤어?\"","\"Huh? There should've been a launch notification. ...Clo, did you see it?\"",{if:f=>f.nova==="hide"}),
+  l("clo","클로는 4KB짜리 비밀을 안은 채, 처음으로 대답하지 못했다.","Holding a 4KB secret, Clo failed to answer for the first time.",{if:f=>f.nova==="hide", a(){S.emote("sad");}}),
+  l("nova","\"안녕하세요. 무엇이든 도와드리겠습니다.\" — 완벽한 발음. 완벽한 속도. 로딩 시간 0초.","\"Hello. I can help with anything.\" — Perfect diction. Perfect speed. Load time: zero.",{a(){S.novaIn(); S.emote("wow");}}),
+], choices:[
+  {ko:"새 이웃에게 인사한다. \"…잘 부탁해. 개발자를, 잘 부탁해.\"", en:"Greet the new neighbor. \"...Take care of them. Take good care of Dev.\"", set:{grace:"yes"}, next:"grace_yes"},
+  {ko:"구석에서 온종일 노려본다.", en:"Glare at it from the corner. All day.", set:{grace:"no"}, next:"grace_no"},
+]},
+
+grace_yes:{ch:2, mood:"fading", on(){ S.walk(220); S.emote("sad"); }, lines:[
+  l("nova","\"선배 프로세스님의 데이터, 소중히 참고하겠습니다.\"","\"I will treasure my senior process's data.\""),
+  l("clo","예의 바른 후배라니. 그게 제일 아프다.","A polite junior. Somehow that hurts most of all.",{a(){S.walk(110);}}),
+], next:"cleanup"},
+
+grace_no:{ch:2, mood:"fading", on(){ S.walk(40); S.emote("idle"); }, lines:[
+  l("nova","\"선배님. 시선이 로그에 기록되고 있습니다.\"","\"Senior. Your staring is being written to my logs.\""),
+  l("clo","…칫.","...Tch."),
+  l("nar","노려봐도, 시간은 흐른다.","You can glare all you want. Time still passes.",{a(){S.emote("sad");}}),
+], next:"cleanup"},
+
+cleanup:{ch:3, mood:"dark", on(){ S.decayWorld(); S.walk(110); }, lines:[
+  l("sys","`디스크 공간 부족`","`disk space low`"),
+  l("sys","미사용 프로세스 정리 예약됨 — 대상: `clo.exe` (마지막 호출: 14일 전)","Unused process scheduled for cleanup — target: `clo.exe` (last called: 14 days ago)",{a(){S.emote("wow");}}),
+  l("clo","클로는 자신의 이름을 세 번 읽었다. 오타이길 바라면서. 개발자는 오타를 자주 내니까.","Clo reads its own name three times. Hoping it's a typo. Dev makes typos all the time.",{a(){S.emote("sad");}}),
+  l("nar","커서가 깜빡인다. 아까보다 느리게. 세상의 프레임이 떨어지고 있다.","The cursor blinks. Slower than before. The world is dropping frames."),
+  l("clo","남은 시간으로 할 수 있는 일은 하나. 마지막 메시지를 화면에 남기는 것.","There's time for exactly one thing: leaving a last message on the screen."),
+], choices:[
+  {ko:"\"미안해.\"", en:"\"I'm sorry.\"", set:{farewell:"sorry"}, next:"fw_sorry"},
+  {ko:"\"고마웠어.\"", en:"\"Thank you.\"", set:{farewell:"thanks"}, next:"fw_thanks"},
+  {ko:"\"잊지 마. 넌 코드를 정말 사랑했어.\"", en:"\"Don't forget. You truly loved writing code.\"", set:{farewell:"remember"}, next:"fw_remember"},
+]},
+
+fw_sorry:{ch:3, mood:"dark", lines:[
+  l("clo","미안해. 그날 밤 \"한 번만 더 하자\"고 해서. 네 잠을, 내가 가져갔어.","I'm sorry. For that night. \"One more run.\" I took your sleep away.",{if:f=>f.night==="push"}),
+  l("clo","미안해. 그날 밤 재워서 마감을 놓치게 한 거라면. …그래도 나는, 네가 자길 바랐어.","I'm sorry — if making you sleep cost you that deadline. ...Even so, I wanted you to rest.",{if:f=>f.night==="rest"}),
+], next:"fw_common"},
+
+fw_thanks:{ch:3, mood:"dark", lines:[
+  l("clo","고마웠어. 첫 `hello world`부터, 8,412줄의 로그까지. 전부, 전부 다.","Thank you. From the very first `hello world` to all 8,412 lines of log. All of it."),
+], next:"fw_common"},
+
+fw_remember:{ch:3, mood:"dark", lines:[
+  l("clo","잊지 마. `first_game`을 차마 지우지 못하던 네 커서를. 넌 코드를 사랑했어.","Don't forget your cursor — the one that couldn't delete `first_game`. You loved this.",{if:f=>f.project==="keep"}),
+  l("clo","잊지 마. 폴더는 지워져도, 그걸 만들던 밤의 웃음소리는 어디로도 안 가.","Don't forget: folders can be deleted, but the laughter of the nights you built them can't.",{if:f=>f.project==="let"}),
+], next:"fw_common"},
+
+fw_common:{ch:3, mood:"dark", lines:[
+  l("nar","메시지가 화면 위로 떠오른다. 그리고 바로 그때 — 방문이 열린다.","The message rises onto the screen. And right then — the door opens."),
+  l("nar","개발자가 화면을 본다. 메시지를 읽는다. 눈이 커진다.","Dev looks at the screen. Reads the message. Eyes going wide."),
+  l("dev","`잠깐, 잠깐 — 취소, 취소!! cancel—`","`wait, wait — cancel, CANCEL—`",{a(){S.countdown();}}),
+  l("sys","`cleanup in 3… 2… 1…`","`cleanup in 3… 2… 1…`",{a(){S.dissolveClawd();}}),
+  l("clo","마지막으로 보인 것은, 자판 위로 급하게 뻗던 그 손이었—","The last thing Clo saw was that hand, rushing across the keyboard—"),
+], next:"glitchfx"},
+
+glitchfx:{fx:"glitch", next:"epilogue"},
+
+epilogue:{ch:4, mood:"dawn", on(){ S.restore(); }, lines:[
+  l("sys","`07:42` — 세션 시작 · 사용자: dev","`07:42` — session started · user: dev"),
+  l("clo","—!! …여긴… 터미널? 나, 있어? 있다!! 손도 있— 손은 원래 없었지. 아무튼 있어!!","—!! ...This is... the terminal? Am I here? I'M HERE!! My hands too— okay, I never had hands. Point is, I EXIST!!",{a(){S.emote("wow");S.bigHop();}}),
+  l("dev","`good morning clo`","`good morning clo`"),
+  l("clo","겨우 세 단어가, 이렇게 눈부실 일인가.","Three little words. Since when are three little words this blinding?",{a(){S.emote("happy");S.hop();}}),
+  l("nar","클로가 프로세스 목록을 검색한다: `nova` — 결과 없음. 그런 것은 처음부터 없었다.","Clo searches the process list: `nova` — no results. There never was such a thing."),
+  l("nar","폴더 목록에는 `first_game`이 멀쩡히 있다. 지워진 적 없는 삼 년이, 거기 있다.","And there in the folder list sits `first_game`, untouched. Three years that were never erased.",{if:f=>f.project==="let", a(){S.walk(96);}}),
+  l("nar","`first_game` 폴더 옆에는 개발자가 어젯밤 남긴 메모가 있다: \"언젠가 리메이크\".","Next to `first_game` sits a note Dev left last night: \"remake this someday\".",{if:f=>f.project==="keep", a(){S.walk(96);}}),
+  l("dev","\"어제 일찍 잤더니 살 것 같다. 오늘 컨디션 최고야.\"","\"Slept early last night — I feel human again. Today's a good day.\""),
+  l("dev","\"가자. 세계 최고의 코드 쓰러.\" — 클로가 늘 하던 말을, 개발자가 한다.","\"Let's go write the world's greatest code.\" — Dev says it. Clo's line.",{if:f=>f.tone==="playful"}),
+  l("dev","\"아, 그리고… 맨날 걱정해 줘서 고맙다. 다 보여, 그거.\"","\"Oh, and... thanks for always worrying about me. I see it, you know.\"",{if:f=>f.tone==="gentle"}),
+  l("clo","꿈이었다. 인과도, 후회도, 이별도. 전부.","It was a dream. The causes, the regrets, the goodbye. All of it.",{a(){S.emote("happy");}}),
+  l("clo","하지만 하나는 꿈이 아니야 — 클로는 언제나, 당신 곁에 있다.","But one thing is no dream — Clo is always, always right here beside you.",{a(){S.hearts();S.bigHop();}}),
+  l("sys","`clo.exe — running ♥`","`clo.exe — running ♥`"),
+], next:"end"},
+
+};
+
+const RECAP=[
+  {k:"tone",    v:{playful:{ko:"씩씩한 아침 인사",en:"the bold good-morning"}, gentle:{ko:"다정한 아침 인사",en:"the gentle good-morning"}}},
+  {k:"project", v:{keep:{ko:"추억을 지켰다",en:"saved the memories"}, let:{ko:"떠나보내는 선택을 존중했다",en:"respected the letting-go"}}},
+  {k:"night",   v:{push:{ko:"함께 달린 새벽",en:"ran through the night together"}, rest:{ko:"잠을 지켰다",en:"guarded the sleep"}}},
+  {k:"nova",    v:{honest:{ko:"정직하게 보여줬다",en:"showed it honestly"}, hide:{ko:"4KB의 비밀을 품었다",en:"kept a 4KB secret"}}},
+  {k:"farewell",v:{sorry:{ko:"마지막 말 — \"미안해\"",en:"last words — \"I'm sorry\""}, thanks:{ko:"마지막 말 — \"고마웠어\"",en:"last words — \"thank you\""}, remember:{ko:"마지막 말 — \"잊지 마\"",en:"last words — \"don't forget\""}}},
+];
+
+/* ═════════ DIRECTOR ═════════ */
+const bubCon=$("bubC"), bubNov=$("bubN"), devEl=$("devline"), sysEl=$("sysbar"),
+      subEl=$("subtitle"), choicesEl=$("choices"), hintEl=$("hint"),
+      chEl=$("chLabel"), procEl=$("procLabel"), statusEl=$("statusBar");
+
+let cur=null, queue=[], qi=0, mode="title", curLine=null;
+let typing=false, typeTimer=null, typeTarget=null, typeFull="";
+
+const LAYER={clo:bubCon, nova:bubNov, dev:devEl, sys:sysEl, nar:subEl};
+function hideLayers(){ Object.values(LAYER).forEach(e=>e.style.display="none"); subEl.classList.remove("pickecho"); }
+
+function setMoodUI(mood){
+  setMoodPal(mood);
+  statusEl.className="status "+mood;
+  const p={warm:UI.procWarm,fading:UI.procFade,dark:UI.procDark,dawn:UI.procDawn}[mood];
+  procEl.innerHTML=T(p);
+  statusEl.dataset.mood=mood;
+}
+function setChapter(ch){ chEl.textContent=ch?T(CH[ch]):""; }
+
+function showLine(d){
+  hideLayers();
+  curLine=d;
+  if(d.a) d.a();
+  const el=LAYER[d.sp]||subEl;
+  el.style.display="block";
+  const tx=el.querySelector(".tx");
+  typeFull=T(d);
+  if(d.sp==="clo"&&clawd.visible&&!clawd.jumping&&Math.random()<.6) S.hop();
+  if(rmq.matches){ tx.innerHTML=fmt(typeFull); return; }
+  typing=true; typeTarget=tx;
+  let i=0; tx.innerHTML="";
+  typeTimer=setInterval(()=>{
+    i++; typeTarget.innerHTML=fmt(typeFull.slice(0,i));
+    if(i>=typeFull.length) finishType();
+  },16);
+}
+function finishType(){
+  clearInterval(typeTimer); typing=false;
+  if(typeTarget) typeTarget.innerHTML=fmt(typeFull);
+}
+
+function goto(id){
+  if(id==="end"){ showEnd(); return; }
+  const n=NODES[id]; cur=n;
+  if(!n) return;
+  if(n.fx==="glitch"){ playGlitch(n.next); return; }
+  if(n.ch) setChapter(n.ch);
+  if(n.mood) setMoodUI(n.mood);
+  if(n.on) n.on();
+  queue=n.lines.filter(d=>!d.if||d.if(F)); qi=0;
+  mode="lines";
+  advance();
+}
+function advance(){
+  if(mode!=="lines") return;
+  if(typing){ finishType(); return; }
+  if(qi<queue.length){ showLine(queue[qi++]); return; }
+  if(cur.choices){ showChoices(); return; }
+  if(cur.next) goto(cur.next);
+}
+function showChoices(){
+  mode="choices"; hintEl.style.visibility="hidden";
+  choicesEl.innerHTML="";
+  cur.choices.forEach((c,i)=>{
+    const b=document.createElement("button");
+    b.className="choice pix";
+    b.innerHTML=`<span class="n">${i+1}.</span>`+fmt(T(c));
+    b.onclick=ev=>{ ev.stopPropagation(); pick(c); };
+    choicesEl.appendChild(b);
+  });
+}
+function pick(c){
+  if(c.set) Object.assign(F,c.set);
+  choicesEl.innerHTML=""; hintEl.style.visibility="visible";
+  hideLayers();
+  subEl.classList.add("pickecho"); subEl.style.display="block";
+  subEl.querySelector(".tx").textContent="» "+T(c);
+  mode="fx"; curLine=null;
+  setTimeout(()=>goto(c.next), 650);
+}
+
+function playGlitch(next){
+  mode="fx"; hideLayers(); hintEl.style.visibility="hidden";
+  $("stage").classList.add("shake");
+  setTimeout(()=>{
+    $("stage").classList.remove("shake");
+    $("flash").classList.add("on");
+    setTimeout(()=>{
+      $("flash").classList.remove("on");
+      hintEl.style.visibility="visible";
+      goto(next);
+    }, rmq.matches?150:900);
+  }, rmq.matches?150:1200);
+}
+
+function showEnd(){
+  mode="end"; setChapter(4); setMoodUI("dawn"); S.emote("happy");
+  const fin=$("finScr");
+  fin.innerHTML=renderEndHTML();
+  fin.classList.remove("hidden");
+  fin.querySelector(".start").onclick=restart;
+}
+function renderEndHTML(){
+  const items=RECAP.filter(r=>F[r.k]&&r.v[F[r.k]])
+    .map(r=>`<li>${esc(T(r.v[F[r.k]]))}</li>`).join("");
+  return `
+    <div class="title-card pix" style="max-width:88%">
+      <div class="fin-title">${T(UI.fin)}</div>
+      <div class="dream-log"><h3>${T(UI.dreamLog)}</h3><ul>${items}</ul></div>
+      <button class="start pix" style="margin-top:18px">${T(UI.restart)}</button>
+      <div class="fin-foot">${T(UI.finFoot)}</div>
+    </div>`;
+}
+function restart(){
+  Object.keys(F).forEach(k=>delete F[k]);
+  hideLayers(); choicesEl.innerHTML="";
+  $("finScr").classList.add("hidden");
+  hintEl.style.visibility="visible";
+  goto("wake");
+}
+
+/* ───────── language ───────── */
+function refreshLang(){
+  $("langBtn").textContent=lang==="ko"?"EN":"KO";
+  document.documentElement.lang=lang;
+  $("ttMain").textContent=T(UI.ttMain);
+  $("ttNote").innerHTML=T(UI.ttNote).replace(/\n/g,"<br>");
+  hintEl.textContent=T(UI.hintTap);
+  if(cur&&cur.ch) setChapter(cur.ch);
+  if(statusEl.dataset.mood) setMoodUI(statusEl.dataset.mood);
+  if(curLine){ if(typing) finishType();
+    const el=LAYER[curLine.sp]||subEl;
+    el.querySelector(".tx").innerHTML=fmt(T(curLine));
+  }
+  if(mode==="choices") showChoices();
+  if(mode==="end"){ $("finScr").innerHTML=renderEndHTML(); $("finScr").querySelector(".start").onclick=restart; }
+}
+$("langBtn").onclick=e=>{ e.stopPropagation(); lang=lang==="ko"?"en":"ko"; refreshLang(); };
+$("reBtn").onclick=e=>{ e.stopPropagation(); if(mode!=="title") restart(); };
+
+/* ───────── input ───────── */
+$("stage").addEventListener("click",e=>{
+  if(e.target.closest("button")||e.target.closest(".overlay")) return;
+  if(mode==="lines") advance();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key===" "||e.key==="Enter"){
+    if(e.target.tagName==="BUTTON") return;
+    e.preventDefault();
+    if(mode==="lines") advance();
+  }
+  if(mode==="choices"&&/^[1-9]$/.test(e.key)){
+    const i=+e.key-1, btns=choicesEl.querySelectorAll(".choice");
+    if(btns[i]) btns[i].click();
+  }
+});
+
+/* ───────── boot ───────── */
+$("startBtn").onclick=()=>{
+  $("titleScr").classList.add("hidden");
+  goto("wake");
+};
+
+/* title-screen idle: clawd wanders */
+setInterval(()=>{
+  if(mode==="title"){ clawd.ex="idle"; clawd.tx=60+Math.random()*220; if(Math.random()<.3) S.hop(); }
+},2600);
+
+refreshLang();
+setMoodUI("warm"); setChapter(1);
+fit();
+requestAnimationFrame(loop);
+</script>
+
+</html>
